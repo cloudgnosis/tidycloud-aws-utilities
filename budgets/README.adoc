@@ -1,0 +1,40 @@
+
+== Budgets
+
+=== Set simple budget
+
+There are two PowerShell scripts, `Set-SimpleBudget.ps1` and `Get-SimpleBudget.ps1`, which provide a simplified script interface to create AWS budgets in an AWS account.
+The scripts require PowerShell 7 to run and use _AWS Tools for PowerShell_ for communication with AWS services.
+
+In PowerShell in the directory of the scripts, run `Get-Help ./Set-SimpleBudget.ps1` or `Set-SimpleBudget.ps1 -?` to get brief help, or run `Get-Help ./Set-SimpleBudget.ps1 -Full` for a detailed explanation with examples.
+
+==== AWS Permissions
+
+The following AWS permissions are needed for the scripts. 
+
+[source,json]
+----
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "budgets:ViewBudget",
+                "budgets:ModifyBudget"
+            ],
+            "Resource": "arn:aws:budgets::123456789012:budget/*" # <1> <2>
+        },
+        {
+            "Effect": "Allow",
+            "Action": "sts:GetCallerIdentity",
+            "Resource": "*"
+        }
+    ]
+}
+----
+<1> Replace 123456789012 with actual AWS account id.
+<2> Change * to a different pattern if more restrictions on budget access are needed.
+
+
+
