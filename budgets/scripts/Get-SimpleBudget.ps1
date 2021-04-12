@@ -7,6 +7,11 @@ param (
     [Parameter(Mandatory, HelpMessage="The name of the budget to get")]
     [String]
     $BudgetName
+    ,
+    # If a notificastion summary is added or not
+    [Parameter(HelpMessage="If set, adds the notification descriptions as a single notification summary text field")]
+    [Switch]
+    $AddNotificationSummary
 )
 
 function Get-NotificationDescription {
@@ -43,6 +48,7 @@ if ($null -ne $tags) {
         "$k = $v"
     }    
 }
+[string[]]$notificationSummaryArray = @()
 $notifications = Get-BGTNotificationsForBudget -BudgetName $BudgetName -AccountId $accountId | ForEach-Object {
     $nt = $PSItem.NotificationType
     $co = $PSItem.ComparisonOperator
@@ -61,9 +67,10 @@ $notifications = Get-BGTNotificationsForBudget -BudgetName $BudgetName -AccountI
         CostType = $nt
         Threshold = $t
         ThresholdType = $tt -eq 'ABSOLUTE_VALUE' ? $tt : 'PERCENTAGE'
-        SubscriberAddreess = $ad 
+        SubscriberAddress = $ad 
         Description = "$desc $subscribertext"
     }
+    $notificationSummaryArray += "$desc $subscribertext"
     $notification
 }
 $result = [PSCustomObject]@{
@@ -77,6 +84,9 @@ $result = [PSCustomObject]@{
     FilterRegions = $regions
     FilterTags = $tags
     Notifications = $notifications
+}
+if ($AddNotificationSummary) {
+    Add-Member -InputObject $result -MemberType NoteProperty -Name NotificationSummary -Value ($notificationSummaryArray -join ", ")
 }
 
 $result
@@ -93,6 +103,10 @@ Additional budget features may not display properly.
 The name that is associated with the budget in the AWS Account.
 This parameter is mandatory
 
+.PARAMETER AddNotificationSummmary
+If specified, adds a field NotificationSummary to the result which contains the notification description
+texts of all notification as a single comma-separated text string.
+
 .EXAMPLE
 ./Get-SimpleBudget.ps1 -BudgetName TheTestBudget 
 
@@ -105,36 +119,33 @@ BudgetLimitUnit   : USD
 LastUpdatedTime   : 04/05/2021 17:34:23
 FilterRegions     : 
 FilterTags        : 
-Notifications     : {@{Operator=GREATER_THAN; CostType=ACTUAL; Threshold=184.5; ThresholdType=ABSOL
-                    UTE_VALUE; SubscriberAddreess=alert@example.com; Description=Actual incurred co
-                    st > 184.5 USD (EMAIL: alert@example.com)}, @{Operator=GREATER_THAN; CostType=A
-                    CTUAL; Threshold=80; ThresholdType=PERCENTAGE; SubscriberAddreess=alert@example
-                    .com; Description=Actual incurred cost > 80 % of monthly budget limit (EMAIL: a
-                    lert@example.com)}, @{Operator=GREATER_THAN; CostType=FORECASTED; Threshold=100
-                    ; ThresholdType=PERCENTAGE; SubscriberAddreess=alert@example.com; Description=F
-                    orecasted cost for the month > 100 % of monthly budget limit (EMAIL: alert@exam
-                    ple.com)}}
-
+Notifications     : {@{Operator=GREATER_THAN; CostType=ACTUAL; Threshold=80; ThresholdType=PERCENTAGE; 
+                    SubscriberAddress=alert@example.com; Description=Actual incurred cost > 80 % of 
+                    monthly budget limit (EMAIL: alert@example.com)}, @{Operator=GREATER_THAN; 
+                    CostType=FORECASTED; Threshold=100; ThresholdType=PERCENTAGE; 
+                    SubscriberAddress=alert@example.com; Description=Forecasted cost for the month > 100 
+                    % of monthly budget limit (EMAIL: alert@example.com)}}
 .EXAMPLE
-./Get-SimpleBudget.ps1 -BudgetName BTestBudget   
+./Get-SimpleBudget.ps1 -BudgetName TheTestBudget -AddNotificationSummary
 
-BudgetName        : BTestBudget
-StartDate         : 04/01/2021 11:39:49
-EndDate           : 04/30/2021 11:39:49
-BudgetKind        : Monthly cost
-BudgetLimitAmount : 2.5
-BudgetLimitUnit   : USD
-LastUpdatedTime   : 04/05/2021 11:39:51
-FilterRegions     : {eu-west-1, eu-north-1}
-FilterTags        : Project = SolutionPilot
-Notifications     : {@{Operator=GREATER_THAN; CostType=ACTUAL; Threshold=3.75; ThresholdType=ABSOLU
-                    TE_VALUE; SubscriberAddreess=alert@example.com; Description=Actual incurred cost > 
-                    3.75 USD (EMAIL: alert@example.com)}, @{Operator=GREATER_THAN; CostType=ACTUAL; Thr
-                    eshold=80; ThresholdType=PERCENTAGE; SubscriberAddreess=alert@example.com; Descript
-                    ion=Actual incurred cost > 80 % of monthly budget limit (EMAIL: alert@example.com)}
-                    , @{Operator=GREATER_THAN; CostType=FORECASTED; Threshold=100; ThresholdType=PE
-                    RCENTAGE; SubscriberAddreess=alert@example.com; Description=Forecasted cost for the
-                     month > 100 % of monthly budget limit (EMAIL: alert@example.com)}}
+BudgetName          : TheTestBudget
+StartDate           : 04/01/2021 17:34:22
+EndDate             : 04/30/2021 17:34:22
+BudgetKind          : Monthly cost
+BudgetLimitAmount   : 123.0
+BudgetLimitUnit     : USD
+LastUpdatedTime     : 04/05/2021 17:34:23
+FilterRegions       : 
+FilterTags          : 
+Notifications       : {@{Operator=GREATER_THAN; CostType=ACTUAL; Threshold=80; ThresholdType=PERCENTAGE; 
+                      SubscriberAddress=alert@example.com; Description=Actual incurred cost > 80 % of 
+                      monthly budget limit (EMAIL: alert@example.com)}, @{Operator=GREATER_THAN; 
+                      CostType=FORECASTED; Threshold=100; ThresholdType=PERCENTAGE; 
+                      SubscriberAddress=alert@example.com; Description=Forecasted cost for the month > 
+                      100 % of monthly budget limit (EMAIL: alert@example.com)}}
+NotificationSummary : Actual incurred cost > 80 % of monthly budget limit (EMAIL: alert@example.com), 
+                      Forecasted cost for the month > 100 % of monthly budget limit (EMAIL: 
+                      alert@example.com)
 
 
 #>
