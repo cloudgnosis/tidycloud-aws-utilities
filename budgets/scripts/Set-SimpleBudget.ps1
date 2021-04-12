@@ -28,11 +28,6 @@ param (
     [Double]
     $ForecastPercentageThreshold = 100
     ,
-    # Actual multiplier threshold
-    [Parameter(HelpMessage="A multiplier of monthly budget limit, notification when the actual cost reaches multiplied amount")]
-    [Double]
-    $ActualMultiplierThreshold = 1.5
-    ,
     # Notification email
     [Parameter(Mandatory, HelpMessage="Email address to send notifications to")]
     [String]
@@ -54,13 +49,25 @@ param (
     $FilterRegion
 )
 
+#
+# We need to provide the account ID in the budget calls, so this will get the accountID from 
+# the current AWS credentials in use.
+# Get a list of existing budgets filtering on our budget name, so we can check later whether 
+# we will create a new budget or modify an existing one.
+#
 $accountId = (Get-STSCallerIdentity).Account
 [array]$budgets = Get-BGTBudgetList -AccountId $accountId | Where-Object -Property BudgetName -eq -Value $BudgetName
 
+# Calculate start and end dates of the budget, from 1st of this month
+# to the end of the last month, based on number of months
+#
 $now = Get-Date
 $startTime = $now.AddDays(1-$now.Day)
 $endTime = $startTime.AddMonths($NumberOfMonths).AddDays(-1)
 
+#
+# Notificastion data
+#
 $actualPercentNotification = @{
     NotificationType = "ACTUAL"
     ComparisonOperator = "GREATER_THAN"
@@ -73,12 +80,10 @@ $forecastPercentNotification = @{
     Threshold = $ForecastPercentageThreshold
     ThresholdType = "PERCENTAGE"
 }
-$actualmultiplierNotification = @{
-    NotificationType = "ACTUAL"
-    ComparisonOperator = "GREATER_THAN"
-    Threshold = $ActualMultiplierThreshold * $Amount
-    ThresholdType = "ABSOLUTE_VALUE"
-}
+
+#
+# Create notification data structures
+#
 $notification1 = New-Object Amazon.Budgets.Model.NotificationWithSubscribers
 $notification1.Notification = $actualPercentNotification
 $notification1.Subscribers.Add(@{
@@ -91,15 +96,12 @@ $notification2.Subscribers.Add(@{
     Address = @($NotificationEmail)
     SubscriptionType = "EMAIL"
 })
-$notification3 = New-Object Amazon.Budgets.Model.NotificationWithSubscribers
-$notification3.Notification = $actualmultiplierNotification
-$notification3.Subscribers.Add(@{
-    Address = @($NotificationEmail)
-    SubscriptionType = "EMAIL"
-})
 
 $costFilter = @{}
 
+#
+# CHeck if a tag is specified afor cost filter nd if it is a user-defined tag or an AWS tag, to get the right format
+#
 if ($PSBoundParameters.ContainsKey("TagKey")) {
     if (-Not $TagKey.StartsWith('aws:')) {
         $Tagkey = "user:$TagKey"
@@ -107,17 +109,22 @@ if ($PSBoundParameters.ContainsKey("TagKey")) {
     $costFilter.Add('TagKeyValue', "$TagKey`$$TagValue")
 }
 
+#
+# Check if any regions are specified for cost filter
+#
 if ($PSBoundParameters.ContainsKey("FilterRegion")) {
     $costFilter.Add('Region', $FilterRegion)
 }
 
 if ($budgets.Count -eq 0) {
+    # New budget is simple, create everything in one go
     New-BGTBudget -Budget_BudgetName $BudgetName -AccountId $accountId `
                     -Budget_BudgetType COST -BudgetLimit_Amount $Amount -BudgetLimit_Unit USD `
                     -Budget_TimeUnit MONTHLY -TimePeriod_Start $startTime -TimePeriod_End $endTime `
                     -Budget_CostFilter $costFilter `
-                    -NotificationsWithSubscriber @($notification1, $notification2, $notification3)
+                    -NotificationsWithSubscriber @($notification1, $notification2)
 } else {
+    # Update budget a bit more complex, need to handle notification config separately
     Update-BGTBudget -NewBudget_BudgetName $BudgetName -AccountId $accountId `
                      -NewBudget_BudgetType COST -BudgetLimit_Amount $Amount -BudgetLimit_Unit USD `
                      -NewBudget_TimeUnit MONTHLY -TimePeriod_Start $startTime -TimePeriod_End $endTime `
@@ -139,21 +146,17 @@ if ($budgets.Count -eq 0) {
     New-BGTNotification -BudgetName $BudgetName -AccountId $accountId -Notification_ComparisonOperator GREATER_THAN `
                         -Notification_NotificationType FORECASTED -Notification_ThresholdType PERCENTAGE `
                         -Notification_Threshold $ForecastPercentageThreshold -Subscriber @($subscriber)
-
-    New-BGTNotification -BudgetName $BudgetName -AccountId $accountId -Notification_ComparisonOperator GREATER_THAN `
-                        -Notification_NotificationType ACTUAL -Notification_ThresholdType ABSOLUTE_VALUE `
-                        -Notification_Threshold ($ActualMultiplierThreshold * $Amount) -Subscriber @($subscriber)
 }
 
 <#
 .SYNOPSIS
 Create or update a simple monthly cost budget in an AWS account
 .DESCRIPTION
-Create or update a simple monthly cost budget, for a limited period. This sets up a monthly cost budget in an AWS account with three types of notifications:
+Create or update a simple monthly cost budget, for a limited period. 
+his sets up a monthly cost budget in an AWS account with two types of notifications:
 
 - When actual incurred cost reaches a specified percentage for the monthly budget amount
 - When the forecasted cost for a month reaches a specified percentage for the monthly budget amount
-- When actual incurred cost reaches a multiplier of the monthly budget amount
 
 The purpose of this script is to create a non-recurring opinionated monthly cost budget without too many options to consider.
 
@@ -180,11 +183,6 @@ This is a percentage value of the budget limit, where it will notify in case the
 The default is 100 (i.e. 100%)
 Thus with the default value, if the monthly budget limit is 100 USD, the notification will trigger when the forecasted cost for the month is greater than 100 USD.
 
-.PARAMETER ActualMultiplierThreshold
-This is a multiplier value applied to the budget limit, where it will notify if the actual cost incurred passes the budget limit multiplied by the multiplier.
-The default value is 1.5.
-Thus with the default value, if the monthly budget limit is 100 USD, the notification will trigger when the actual cost in the month is greater than 150 USD.
-
 .PARAMETER NotificationEmail
 Email address to send notifications to. All notifications are sent to this email address.
 
@@ -206,16 +204,14 @@ Multiple regions can be specified, separated by commas. Region identifiers look 
   Send email notifications to budget-alert@example.com, with notifications being sent when:
    - Incurred cost is greater than 80 USD
    - Forecasted monthly cost will be greater than 100 USD
-   - Incurred cost is greater than 150 USD
 
 .EXAMPLE
-./Set-SimpleBudget.ps1 -BudgetName ExampleBudget2 -Amount 50 -NotificationEmail budget-alert@example.com -ActualPercentageThreshold 90 -ForecastedPercentageThreshold 120 -ActualMultiplierThreshold 2
+./Set-SimpleBudget.ps1 -BudgetName ExampleBudget2 -Amount 50 -NotificationEmail budget-alert@example.com -ActualPercentageThreshold 90 -ForecastedPercentageThreshold 120
 
   Create/update a budget (name ExampleBudget2) with a monthly budget limit of 50 USD for all regions and all resources in the account, valid for the current month. 
   Send email notifications to budget-alert@example.com, with notifications being sent when:
    - Incurred cost is greater than 45 USD
    - Forecasted monthly cost will be greater than 120 USD
-   - Incurred cost is greater than 100 USD
 
 .EXAMPLE
 ./Set-SimpleBudget.ps1 -BudgetName ExampleBudget3 -Amount 100 -NotificationEmail budget-alert@example.com -NumberOfMonths 3 -TagKey Project -TagValue SolutionPilot
@@ -225,7 +221,6 @@ Multiple regions can be specified, separated by commas. Region identifiers look 
   Send email notifications to budget-alert@example.com, with notifications being sent when:
    - Incurred cost is greater than 80 USD
    - Forecasted monthly cost will be greater than 100 USD
-   - Incurred cost is greater than 150 USD
 
 .EXAMPLE
 ./Set-SimpleBudget.ps1 -BudgetName ExampleBudget4 -Amount 100 -NotificationEmail budget-alert@example.com -FilterRegion eu-west-1,eu-north-1 -TagKey aws:cloudformation:stack-name -TagValue SolutionStack
@@ -235,5 +230,4 @@ Multiple regions can be specified, separated by commas. Region identifiers look 
   Send email notifications to budget-alert@example.com, with notifications being sent when:
    - Incurred cost is greater than 80 USD
    - Forecasted monthly cost will be greater than 100 USD
-   - Incurred cost is greater than 150 USD
  #>
