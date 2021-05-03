@@ -4,3 +4,6 @@ This repository is for collections of scripts and utilities for managing AWS Clo
 
 include::budgets/README.adoc[]
 
+include::cloudformation/README.adoc[]
+
+

@@ -1,0 +1,22 @@
+
+== CloudFormation
+
+=== Drift detection
+
+There are two PowerShell scripts, `Start-DriftDetection.ps1` and `Get-StackDriftStatus.ps1`, which
+provides an interface to start drift detection and get results from a performed drift detection.
+
+In PowerShell in the directory of the scripts, run `Get-Help ./Start-DriftDetection.ps1` or `Start-DriftDetection.ps1 -?` to get brief help, or run `Get-Help ./Start-DriftDetection.ps1 -Full` for a detailed explanation with examples.
+
+==== AWS Permissions
+
+The following AWS permissions are needed as a minimum for the scripts on relevant stacks ('*' for all stacks):
+
+* cloudformation:DescribeStacks
+* cloudformation:DetectStackDrift
+* cloudformation:DescribeStackResourceDrifts
+
+In addition, read permissions will be needed for all resources that may be part of these stacks so that the drift detection can get the actual state of the resources.
+There are AWS managed policies for read-only to most of the AWS services, these may be an option if you know which services that will be part of the CloudFormation stacks.
+There is also the very broad **ReadOnlyAcceess** AWS managed policy, which will give read access for _everything_.
+
